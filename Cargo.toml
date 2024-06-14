@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+  "packages/step-0",
+  "packages/step-1",
+  "packages/step-2",
+  "packages/step-3",
+  "packages/step-4",
+]
+
+
+[profile.release]
+debug = true

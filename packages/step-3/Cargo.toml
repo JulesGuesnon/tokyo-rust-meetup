@@ -1,0 +1,9 @@
+[package]
+name = "step_3"
+version = "0.1.0"
+edition = "2021"
+description = ""
+authors = ["Jules Guesnon <guesnonj@outlook.fr>"]
+
+[dependencies]
+nom = "7"
