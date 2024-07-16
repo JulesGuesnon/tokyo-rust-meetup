@@ -22,9 +22,9 @@ pub enum JsonValue {
     Object(HashMap<String, JsonValue>),
 }
 
-type Result<'a, E, O = &'a str> = IResult<&'a str, O, E>;
+type Result<'a, O, E> = IResult<&'a str, O, E>;
 
-fn sp<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E> {
+fn sp<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<&'a str, E> {
     let chars = " \t\r\n";
 
     // nom combinators like `take_while` return a function. That function is the
@@ -32,11 +32,11 @@ fn sp<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E> {
     take_while(move |c| chars.contains(c))(i)
 }
 
-fn parse_str<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E> {
+fn parse_str<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<&'a str, E> {
     escaped(alphanumeric, '\\', one_of("\"n\\"))(i)
 }
 
-fn boolean<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<E, bool> {
+fn boolean<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<bool, E> {
     let parse_true = value(true, tag("true"));
 
     let parse_false = value(false, tag("false"));
@@ -44,7 +44,7 @@ fn boolean<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<E, bool> {
     alt((parse_true, parse_false)).parse(input)
 }
 
-fn null<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<E, ()> {
+fn null<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<(), E> {
     value((), tag("null")).parse(input)
 }
 
@@ -60,7 +60,7 @@ fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn array<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, Vec<JsonValue>> {
+) -> Result<Vec<JsonValue>, E> {
     context(
         "array",
         preceded(
@@ -76,7 +76,7 @@ fn array<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn key_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, (&'a str, JsonValue)> {
+) -> Result<(&'a str, JsonValue), E> {
     separated_pair(
         preceded(sp, string),
         cut(preceded(sp, char(':'))),
@@ -87,7 +87,7 @@ fn key_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn hash<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, HashMap<String, JsonValue>> {
+) -> Result<HashMap<String, JsonValue>, E> {
     context(
         "map",
         preceded(
@@ -111,7 +111,7 @@ fn hash<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn json_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, JsonValue> {
+) -> Result<JsonValue, E> {
     preceded(
         sp,
         alt((
@@ -126,7 +126,7 @@ fn json_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     .parse(i)
 }
 
-fn parse(i: &str) -> Result<VerboseError<&str>, JsonValue> {
+fn parse(i: &str) -> Result<JsonValue, VerboseError<&str>> {
     delimited(
         sp,
         alt((

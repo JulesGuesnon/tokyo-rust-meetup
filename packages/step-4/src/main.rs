@@ -27,7 +27,7 @@ pub enum JsonValue {
     Object(HashMap<String, JsonValue>),
 }
 
-type Result<'a, E, O = &'a str> = IResult<&'a str, O, E>;
+type Result<'a, O, E> = IResult<&'a str, O, E>;
 
 #[derive(Debug)]
 enum JsonError {
@@ -50,12 +50,15 @@ impl Display for JsonError {
 
 impl std::error::Error for JsonError {}
 
-impl<T> ParseError<T> for JsonError {
-    fn from_error_kind(input: T, kind: nom::error::ErrorKind) -> Self {
-        Self::NomError(kind)
+impl<'a> ParseError<&'a str> for JsonError {
+    fn from_error_kind(input: &'a str, kind: nom::error::ErrorKind) -> Self {
+        match kind {
+            ErrorKind::Char => JsonError::Custom(input.to_owned()),
+            _ => Self::NomError(kind),
+        }
     }
 
-    fn append(input: T, kind: nom::error::ErrorKind, other: Self) -> Self {
+    fn append(input: &'a str, kind: nom::error::ErrorKind, other: Self) -> Self {
         Self::NomError(kind)
     }
 }
@@ -66,41 +69,31 @@ impl FromStr for JsonError {
     }
 }
 
-// impl<'a> FromStr for Error<&'a str> {
-//     fn from_str(_value: &str) -> Self {
-//         Self::new("", ErrorKind::Fail)
-//     }
-// }
+impl<'a> ContextError<&'a str> for JsonError {}
 
-// impl<T, E> FromExternalError<T, E> for JsonError {
-//     fn from_external_error(input: T, _kind: ErrorKind, _e: E) -> Self {
-//         Self::NomError(_kind)
-//     }
-// }
-
-fn parse_str<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E> {
+fn parse_str<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<&'a str, E> {
     escaped(alphanumeric, '\\', one_of("\"n\\"))(i)
 }
 
-fn parse_true<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, bool> {
+fn parse_true<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<bool, E> {
     value(true, tag("true"))(i)
 }
 
-fn parse_false<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, bool> {
+fn parse_false<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<bool, E> {
     value(false, tag("false"))(i)
 }
 
-fn null<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<E, ()> {
+fn null<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<(), E> {
     value((), tag("null")).parse(input)
 }
 
-fn u16_hex<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, u16> {
+fn u16_hex<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<u16, E> {
     map(take(4usize), |s: &'a str| {
         u16::from_str_radix(s, 16).unwrap()
     })(i)
 }
 
-fn unicode_escape<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
+fn unicode_escape<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<char, E> {
     map_opt(
         alt((
             // Not a surrogate
@@ -125,7 +118,7 @@ fn unicode_escape<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
     )(i)
 }
 
-fn parse_char<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
+fn parse_char<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<char, E> {
     let (i, c) = anychar(i)?;
 
     if c == '\"' {
@@ -151,7 +144,7 @@ fn parse_char<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
     }
 }
 
-fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) -> Result<E, String> {
+fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) -> Result<String, E> {
     context(
         "string",
         preceded(
@@ -169,7 +162,7 @@ fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) -> Res
 
 fn array<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, Vec<JsonValue>> {
+) -> Result<Vec<JsonValue>, E> {
     context(
         "array",
         delimited(
@@ -190,7 +183,7 @@ fn array<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn key_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, (String, JsonValue)> {
+) -> Result<(String, JsonValue), E> {
     let (i, _) = multispace0(i)?;
 
     let (i, next_char) = peek(anychar)(i)?;
@@ -204,7 +197,7 @@ fn key_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn hash<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, HashMap<String, JsonValue>> {
+) -> Result<HashMap<String, JsonValue>, E> {
     context(
         "map",
         preceded(
@@ -223,7 +216,7 @@ fn hash<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn json_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, JsonValue> {
+) -> Result<JsonValue, E> {
     let (i, _) = many0(multispace1)(i)?;
 
     let (i, first_char) = peek(anychar)(i)?;
@@ -240,22 +233,13 @@ fn json_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     }
 }
 
-fn parse(i: &str) -> Result<VerboseError<&str>, JsonValue> {
+fn parse(i: &str) -> Result<JsonValue, Error<&str>> {
     terminated(json_value, multispace0).parse(i)
 }
 
-// fn main() {
-//     let data = r#"{"foo🤔bar": 42}"#;
-//
-//     println!("Supported parsing {:#?}", parse(data));
-// }
 fn main() {
-    let json = read_to_string("./test-files/twitter.json").unwrap();
-
-    let start = Instant::now();
-    let res = parse(&json);
-
-    println!("Elapsed time: {:?}", start.elapsed());
+    let json = r#"{"hello" "world"}"#;
+    let res = parse(json);
 
     match res {
         Ok(_) => println!("Success"),
@@ -264,3 +248,19 @@ fn main() {
         }
     }
 }
+
+// fn main() {
+//     let json = read_to_string("./test-files/twitter.json").unwrap();
+//
+//     let start = Instant::now();
+//     let res = parse(&json);
+//
+//     println!("Elapsed time: {:?}", start.elapsed());
+//
+//     match res {
+//         Ok(_) => println!("Success"),
+//         Err(e) => {
+//             println!("Oh no: {}", e);
+//         }
+//     }
+// }

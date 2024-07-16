@@ -27,31 +27,31 @@ pub enum JsonValue {
     Object(HashMap<String, JsonValue>),
 }
 
-type Result<'a, E, O = &'a str> = IResult<&'a str, O, E>;
+type Result<'a, O, E> = IResult<&'a str, O, E>;
 
-fn parse_str<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E> {
+fn parse_str<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<&'a str, E> {
     escaped(alphanumeric, '\\', one_of("\"n\\"))(i)
 }
 
-fn parse_true<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, bool> {
+fn parse_true<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<bool, E> {
     value(true, tag("true"))(i)
 }
 
-fn parse_false<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, bool> {
+fn parse_false<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<bool, E> {
     value(false, tag("false"))(i)
 }
 
-fn null<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<E, ()> {
+fn null<'a, E: ParseError<&'a str>>(input: &'a str) -> Result<(), E> {
     value((), tag("null")).parse(input)
 }
 
-fn u16_hex<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, u16> {
+fn u16_hex<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<u16, E> {
     map(take(4usize), |s: &'a str| {
         u16::from_str_radix(s, 16).unwrap()
     })(i)
 }
 
-fn unicode_escape<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
+fn unicode_escape<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<char, E> {
     map_opt(
         alt((
             // Not a surrogate
@@ -76,7 +76,7 @@ fn unicode_escape<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
     )(i)
 }
 
-fn parse_char<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
+fn parse_char<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<char, E> {
     let (i, c) = none_of("\"")(i)?;
 
     if c == '\\' {
@@ -100,7 +100,7 @@ fn parse_char<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, char> {
     }
 }
 
-fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) -> Result<E, String> {
+fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) -> Result<String, E> {
     context(
         "string",
         preceded(
@@ -118,7 +118,7 @@ fn string<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) -> Res
 
 fn array<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, Vec<JsonValue>> {
+) -> Result<Vec<JsonValue>, E> {
     context(
         "array",
         delimited(
@@ -134,7 +134,7 @@ fn array<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn key_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, (String, JsonValue)> {
+) -> Result<(String, JsonValue), E> {
     separated_pair(
         preceded(multispace0, string),
         cut(preceded(multispace0, char(':'))),
@@ -145,7 +145,7 @@ fn key_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn hash<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, HashMap<String, JsonValue>> {
+) -> Result<HashMap<String, JsonValue>, E> {
     println!("Parsed hash");
     context(
         "map",
@@ -165,7 +165,7 @@ fn hash<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 fn json_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
-) -> Result<E, JsonValue> {
+) -> Result<JsonValue, E> {
     let (i, _) = many0(multispace1)(i)?;
 
     let (i, first_char) = peek(anychar)(i)?;
@@ -184,28 +184,28 @@ fn json_value<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     }
 }
 
-fn parse(i: &str) -> Result<VerboseError<&str>, JsonValue> {
+fn parse(i: &str) -> Result<JsonValue, VerboseError<&str>> {
     terminated(json_value, multispace0).parse(i)
 }
 
-// fn main() {
-//     let now_valid = r#"{"あ": "world"}"#;
-//
-//     println!("Supported parsing {:#?}", parse(now_valid));
-// }
-
 fn main() {
-    let json = read_to_string("./test-files/fail.json").unwrap();
+    let now_valid = r#"{"あ": "world"}"#;
 
-    let start = Instant::now();
-    let res = parse(&json);
-
-    println!("Elapsed time: {:?}", start.elapsed());
-
-    match res {
-        Ok(_) => println!("Success"),
-        Err(e) => {
-            println!("Oh no: {}", e);
-        }
-    }
+    println!("Supported parsing {:#?}", parse(now_valid));
 }
+
+// fn main() {
+//     let json = read_to_string("./test-files/fail.json").unwrap();
+//
+//     let start = Instant::now();
+//     let res = parse(&json);
+//
+//     println!("Elapsed time: {:?}", start.elapsed());
+//
+//     match res {
+//         Ok(_) => println!("Success"),
+//         Err(e) => {
+//             println!("Oh no: {}", e);
+//         }
+//     }
+// }

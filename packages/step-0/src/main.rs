@@ -2,15 +2,14 @@
 
 use nom::{
     bytes::complete::{tag, tag_no_case, take_while},
-    character::{is_newline, is_space},
+    character::complete::char,
     combinator::{map, opt},
-    error::ParseError,
+    error::{Error, ParseError},
     sequence::{delimited, separated_pair},
-    IResult, Parser,
+    IResult,
 };
-use std::str;
 
-type Result<'a, E, O = &'a str> = IResult<&'a str, O, E>;
+type Result<'a, O, E> = IResult<&'a str, O, E>;
 
 #[derive(Debug)]
 struct HelloWorld {
@@ -19,24 +18,40 @@ struct HelloWorld {
     pub is_happy: bool,
 }
 
-fn spaces<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E> {
-    take_while(|c| is_space(c as u8) || is_newline(c as u8))(i)
+fn hello<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<String, E> {
+    let (i, hello) = tag_no_case("hello")(i)?;
+
+    Ok((i, hello.to_owned()))
 }
 
-fn hello_world<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<E, (&'a str, &'a str, bool)> {
-    separated_pair(tag_no_case("hello"), spaces, tag_no_case("world"))(i).and_then(
-        |(rest, (hello, world))| {
-            opt(tag("!"))(rest).map(|(rest, is_happy)| (rest, (hello, world, is_happy.is_some())))
-        },
-    )
+fn world<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<String, E> {
+    let (i, world) = tag_no_case("world")(i)?;
+
+    Ok((i, world.to_owned()))
 }
 
-fn parse(i: &str) -> Result<nom::error::VerboseError<&str>, HelloWorld> {
+fn is_happy<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<bool, E> {
+    map(opt(char('!')), |opt| opt.is_some())(i)
+}
+
+fn whitespaces<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<&'a str, E> {
+    take_while(|c| c == ' ' || c == '\n')(i)
+}
+
+fn hello_world<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<(String, String, bool), E> {
+    let (i, (hello, world)) = separated_pair(hello, whitespaces, world)(i)?;
+
+    let (i, is_happy) = is_happy(i)?;
+
+    Ok((i, (hello, world, is_happy)))
+}
+
+fn parse<'a, E: ParseError<&'a str>>(i: &'a str) -> Result<HelloWorld, E> {
     map(
-        delimited(spaces, hello_world, spaces),
+        delimited(whitespaces, hello_world, whitespaces),
         |(hello, world, is_happy)| HelloWorld {
-            hello: hello.to_owned(),
-            world: world.to_owned(),
+            hello,
+            world,
             is_happy,
         },
     )(i)
@@ -45,15 +60,23 @@ fn parse(i: &str) -> Result<nom::error::VerboseError<&str>, HelloWorld> {
 fn main() {
     let input1 = "Hello world";
     let input2 = "Hello World";
-    let input3 = "hello World!";
+    let input3 = "heLlo World!";
     let input4 = "    hello      World!   ";
     let input5 = "   \n hello    not  World!   ";
     let input6 = "Helo world";
 
-    println!("{:?}", parse(input1));
-    println!("{:?}", parse(input2));
-    println!("{:?}", parse(input3));
-    println!("{:?}", parse(input4));
-    println!("{:?}", parse(input5));
-    println!("{:?}", parse(input6));
+    println!("{:?}", parse::<Error<_>>(input1));
+    println!("{:?}", parse::<Error<_>>(input2));
+    println!("{:?}", parse::<Error<_>>(input3));
+    println!("{:?}", parse::<Error<_>>(input4));
+    println!("{:?}", parse::<Error<_>>(input5));
+    println!("{:?}", parse::<Error<_>>(input6));
 }
+
+// type Result<'a, O, E> = IResult<&'a str, O, E>;
+//
+// fn main() {
+//     let response = tag::<_, _, Error<_>>("hello")("hello world");
+//
+//     println!("{response:?}");
+// }
